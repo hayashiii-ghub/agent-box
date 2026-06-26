@@ -9,6 +9,7 @@
 # 箱の中:
 #   - /work にプロジェクトをマウント(編集はホストに反映)
 #   - 認証は ~/dev/.sandbox-claude のコピーをマウント(サブスクのまま・ホスト本体は触らない)
+#   - codex 認証は ~/work/.sandbox-codex(auth.json のみ)のコピーをマウント(host の重い config は持ち込まない)
 #   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
 #   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ
 #   - --ssh でSSHエージェントを転送(git push 用)
@@ -23,10 +24,12 @@ PROJECT="$(cd "$PROJECT" && pwd)"   # 絶対パス化
 shift || true
 
 CLAUDE_CFG="$HOME/work/.sandbox-claude"
+CODEX_CFG="$HOME/work/.sandbox-codex"   # codex 認証(auth.json)の curated コピー。host の重い config.toml は持ち込まない
 HIKIZAN="$HOME/work/projects/hikizan"   # 自前の skill+hooks。更新は host で git pull するだけ(再ビルド不要)
 
 MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
 [ -f "$HOME/.gitconfig" ] && MOUNTS+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
+[ -d "$CODEX_CFG" ] && MOUNTS+=(-v "$CODEX_CFG:/home/dev/.codex")
 [ -d "$HIKIZAN" ] && MOUNTS+=(-v "$HIKIZAN:/opt/hikizan:ro")
 
 if [ "$#" -gt 0 ]; then
