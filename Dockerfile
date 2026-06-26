@@ -3,8 +3,13 @@
 FROM docker.io/library/node:22
 
 # エージェントCLIを事前インストール(毎回 npm install しないで済む)
-# 更新はこのイメージを焼き直す(container build)ことで行う
-RUN npm install -g @anthropic-ai/claude-code
+# 更新はこのイメージを焼き直す(container build)ことで行う。
+# claude-code 2.1.x はネイティブbinaryを arch別 optionalDependency で配るが、build 時に
+# optional が取りこぼされ "native binary not installed" になることがある。対策として
+# linux-arm64 native を明示インストールし、install.cjs を再実行して binary を紐付ける
+# (箱は Apple Silicon=arm64 前提)。
+RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-arm64 @openai/codex \
+ && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs
 
 # 箱の中では自動アップデートしない(焼き込み式・再現性のため。書込不可で失敗する警告も消える)
 ENV DISABLE_AUTOUPDATER=1
