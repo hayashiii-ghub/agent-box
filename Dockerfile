@@ -10,6 +10,18 @@ FROM docker.io/library/node:22
 RUN apt-get update && apt-get upgrade -y \
  && rm -rf /var/lib/apt/lists/*
 
+# GitHub CLI(gh)を公式 apt リポジトリから入れる。箱の中のエージェントが
+# PR 作成・issue・GitHub API を自走できるようにするため。git push は --ssh の
+# エージェント転送で通るが、gh は別系統(トークン認証)なので gh 本体が要る。
+# 公式リポジトリ経由なので box update(--no-cache 再ビルド)のたびに最新版を拾う。
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y gh \
+ && rm -rf /var/lib/apt/lists/*
+
 # エージェントCLIを事前インストール(毎回 npm install しないで済む)
 # 更新はこのイメージを焼き直す(container build)ことで行う。
 # claude-code 2.1.x はネイティブbinaryを arch別 optionalDependency で配るが、build 時に

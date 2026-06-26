@@ -15,6 +15,7 @@
 #   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
 #   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ
 #   - --ssh でSSHエージェントを転送(git push 用)
+#   - gh トークン(~/work/.sandbox-gh-token があれば)を GH_TOKEN で渡す(PR作成・gh API 用)
 set -euo pipefail
 
 BOX_DIR="$HOME/work/projects/agent-box"   # Dockerfile の場所(再ビルドのコンテキスト)
@@ -37,11 +38,14 @@ shift || true
 CLAUDE_CFG="$HOME/work/.sandbox-claude"
 CODEX_CFG="$HOME/work/.sandbox-codex"   # codex 認証(auth.json)の curated コピー。host の重い config.toml は持ち込まない
 HIKIZAN="$HOME/work/projects/hikizan"   # 自前の skill+hooks。更新は host で git pull するだけ(再ビルド不要)
+GH_TOKEN_FILE="$HOME/work/.sandbox-gh-token"   # 箱用 gh トークン(repo 外・chmod600)。PR作成/gh API 用
 
 MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
 [ -f "$HOME/.gitconfig" ] && MOUNTS+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
 [ -d "$CODEX_CFG" ] && MOUNTS+=(-v "$CODEX_CFG:/home/dev/.codex")
 [ -d "$HIKIZAN" ] && MOUNTS+=(-v "$HIKIZAN:/opt/hikizan:ro")
+# gh トークンがあれば GH_TOKEN として注入(git push の SSH とは別系統。-e なので mount でなく環境変数)
+[ -f "$GH_TOKEN_FILE" ] && MOUNTS+=(-e "GH_TOKEN=$(cat "$GH_TOKEN_FILE")")
 
 # イメージが古ければ軽く知らせるだけ(自動更新はしない。取得/解析失敗時は黙ってスキップ)
 STALE_DAYS=14
