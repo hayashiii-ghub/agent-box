@@ -19,6 +19,10 @@ RUN useradd -m -u 501 -s /bin/bash dev
 # これが無いと claude / hikizan hooks が箱内で叩く git が全部止まる。
 RUN git config --system --add safe.directory '*'
 
+# GitHub の host key を焼き込む。箱は --rm で毎回 known_hosts が空になるため、素の git push が
+# "Host key verification failed" で止まる。build 時に取得し system known_hosts に固定しておく。
+RUN ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
+
 USER dev
 # 初回設定ファイルが無いという警告を抑止(中身は実行時に claude が補完)
 RUN printf '{}' > /home/dev/.claude.json
