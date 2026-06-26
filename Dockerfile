@@ -14,6 +14,11 @@ ENV DISABLE_AUTOUPDATER=1
 #  - --dangerously-skip-permissions が使える(root だと安全のため拒否される)
 RUN useradd -m -u 501 -s /bin/bash dev
 
+# 箱内 git の dubious ownership 回避。mount された /work は所有者判定で git に弾かれるため、
+# system 設定で全ディレクトリを信頼する(ro マウントされる user の ~/.gitconfig には潰されない)。
+# これが無いと claude / hikizan hooks が箱内で叩く git が全部止まる。
+RUN git config --system --add safe.directory '*'
+
 USER dev
 # 初回設定ファイルが無いという警告を抑止(中身は実行時に claude が補完)
 RUN printf '{}' > /home/dev/.claude.json
