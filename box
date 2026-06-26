@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# box — Apple Container でエージェント(Claude Code)を隔離して放牧する
+#
+# 使い方:
+#   box [プロジェクトのパス]          → 箱の中で対話的に claude を起動(省略時はカレント)
+#   box [プロジェクトのパス] bash      → 箱の中の shell に入る
+#   box [プロジェクトのパス] <コマンド> → 箱の中で任意コマンドを実行
+#
+# 箱の中:
+#   - /work にプロジェクトをマウント(編集はホストに反映)
+#   - 認証は ~/dev/.sandbox-claude のコピーをマウント(サブスクのまま・ホスト本体は触らない)
+#   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
+#   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ
+#   - --ssh でSSHエージェントを転送(git push 用)
+set -euo pipefail
+
+PROJECT="${1:-$PWD}"
+if [ ! -d "$PROJECT" ]; then
+  echo "error: プロジェクトのパスが見つかりません: $PROJECT" >&2
+  exit 1
+fi
+PROJECT="$(cd "$PROJECT" && pwd)"   # 絶対パス化
+shift || true
+
+CLAUDE_CFG="$HOME/work/.sandbox-claude"
+HIKIZAN="$HOME/work/projects/hikizan"   # 自前の skill+hooks。更新は host で git pull するだけ(再ビルド不要)
+
+MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
+[ -f "$HOME/.gitconfig" ] && MOUNTS+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
+[ -d "$HIKIZAN" ] && MOUNTS+=(-v "$HIKIZAN:/opt/hikizan:ro")
+
+if [ "$#" -gt 0 ]; then
+  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox "$@"
+elif [ -d "$HIKIZAN" ]; then
+  # hikizan を plugin として直読み(hooks=floors も同時に入る)
+  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox \
+    claude --dangerously-skip-permissions --plugin-dir /opt/hikizan
+else
+  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox \
+    claude --dangerously-skip-permissions
+fi
