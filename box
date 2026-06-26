@@ -2,14 +2,15 @@
 # box — Apple Container でエージェント(Claude Code)を隔離して放牧する
 #
 # 使い方:
-#   box [プロジェクトのパス]          → 箱の中で対話的に claude を起動(省略時はカレント)
-#   box [プロジェクトのパス] bash      → 箱の中の shell に入る
-#   box [プロジェクトのパス] <コマンド> → 箱の中で任意コマンドを実行
-#   box update                        → イメージを最新化(claude/codex を再ビルド。手動更新)
+#   box                              → カレントのプロジェクトで claude を対話起動
+#   box <プロジェクトのパス>           → 指定したプロジェクトで claude を対話起動
+#   box <プロジェクトのパス> bash      → 箱の中の shell に入る(コマンド指定時はパス必須。例: box . bash)
+#   box <プロジェクトのパス> <コマンド> → 箱の中で任意コマンドを実行
+#   box update                       → イメージを最新化(claude/codex を再ビルド。手動更新)
 #
 # 箱の中:
 #   - /work にプロジェクトをマウント(編集はホストに反映)
-#   - 認証は ~/dev/.sandbox-claude のコピーをマウント(サブスクのまま・ホスト本体は触らない)
+#   - 認証は ~/work/.sandbox-claude のコピーをマウント(サブスクのまま・ホスト本体は触らない)
 #   - codex 認証は ~/work/.sandbox-codex(auth.json のみ)のコピーをマウント(host の重い config は持ち込まない)
 #   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
 #   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ

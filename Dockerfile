@@ -2,6 +2,14 @@
 # 箱の中で Claude Code を隔離して走らせるための最小イメージ。
 FROM docker.io/library/node:22
 
+# ベースイメージ(Debian)の OS パッケージをセキュリティ修正込みで最新化する。
+# これが無いと node:22 公開時点の古い OS パッケージのまま固まり、公開後に出た
+# 既知CVEの修正(openssl/glibc/git/openssh 等)が取り込まれない。box update
+# (--no-cache 再ビルド)のたびに最新パッチを拾う。最後に apt のインデックス
+# キャッシュを消してイメージを小さく保つ。
+RUN apt-get update && apt-get upgrade -y \
+ && rm -rf /var/lib/apt/lists/*
+
 # エージェントCLIを事前インストール(毎回 npm install しないで済む)
 # 更新はこのイメージを焼き直す(container build)ことで行う。
 # claude-code 2.1.x はネイティブbinaryを arch別 optionalDependency で配るが、build 時に
