@@ -14,6 +14,7 @@
 #   - codex 認証は ~/work/.sandbox-codex(auth.json のみ)のコピーをマウント(host の重い config は持ち込まない)
 #   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
 #   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ
+#   - hikizan の skills を codex にも渡す(/home/dev/.codex/skills に ro マウント。codex 側は skill のみ=hooks/floors は付かない)
 #   - --ssh でSSHエージェントを転送(git push 用)
 #   - gh トークン(~/work/.sandbox-gh-token があれば)を GH_TOKEN で渡す(PR作成・gh API 用)
 set -euo pipefail
@@ -44,6 +45,9 @@ MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
 [ -f "$HOME/.gitconfig" ] && MOUNTS+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
 [ -d "$CODEX_CFG" ] && MOUNTS+=(-v "$CODEX_CFG:/home/dev/.codex")
 [ -d "$HIKIZAN" ] && MOUNTS+=(-v "$HIKIZAN:/opt/hikizan:ro")
+# hikizan の skills を codex にも渡す(codex は ~/.codex/skills を読む=箱では /home/dev/.codex/skills)。
+# 既存の .codex マウントの中へ入れ子で ro 追加(auth.json と共存。codex 側は skill のみ・hooks は付かない)。
+[ -d "$CODEX_CFG" ] && [ -d "$HIKIZAN/skills" ] && MOUNTS+=(-v "$HIKIZAN/skills:/home/dev/.codex/skills:ro")
 # gh トークンがあれば GH_TOKEN として注入(git push の SSH とは別系統。-e なので mount でなく環境変数)
 [ -f "$GH_TOKEN_FILE" ] && MOUNTS+=(-e "GH_TOKEN=$(cat "$GH_TOKEN_FILE")")
 
