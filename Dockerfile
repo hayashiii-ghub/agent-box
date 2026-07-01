@@ -37,10 +37,13 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-arm
 # 箱の中では自動アップデートしない(焼き込み式・再現性のため。書込不可で失敗する警告も消える)
 ENV DISABLE_AUTOUPDATER=1
 
-# 非rootユーザー。uid をホスト(501)に合わせる理由:
-#  - マウントしたファイル(ホスト所有=501)をそのまま読み書きできる
+# 非rootユーザー。uid をホストに合わせる理由:
+#  - マウントしたファイル(ホスト所有)をそのまま読み書きできる
 #  - --dangerously-skip-permissions が使える(root だと安全のため拒否される)
-RUN useradd -m -u 501 -s /bin/bash dev
+# HOST_UID は box update が `--build-arg HOST_UID=$(id -u)` で渡す(未指定なら macOS 既定の 501)。
+# macOS のユーザー uid は 501 以降で、node イメージの node(uid 1000)等とは衝突しない前提。
+ARG HOST_UID=501
+RUN useradd -m -u ${HOST_UID} -s /bin/bash dev
 
 # 箱内 git の dubious ownership 回避。mount された /work は所有者判定で git に弾かれるため、
 # system 設定で全ディレクトリを信頼する(ro マウントされる user の ~/.gitconfig には潰されない)。
