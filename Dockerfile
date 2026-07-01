@@ -1,5 +1,8 @@
 # Apple Container 用「エージェント放牧」サンドボックス
 # 箱の中で Claude Code を隔離して走らせるための最小イメージ。
+# ベースは node:22 タグ(freshness 優先: box update のたびに最新の 22.x とパッチを拾う)。
+# 特定バージョンに固定したい重要更新時は node:22@sha256:... の digest pin にする
+# (再現性 ⇔ freshness のトレードオフ。通常は freshness を優先)。
 FROM docker.io/library/node:22
 
 # ベースイメージ(Debian)の OS パッケージをセキュリティ修正込みで最新化する。
@@ -34,19 +37,21 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-arm
 # 箱の中では自動アップデートしない(焼き込み式・再現性のため。書込不可で失敗する警告も消える)
 ENV DISABLE_AUTOUPDATER=1
 
-# 非rootユーザー。uid をホスト(501)に合わせる理由:
-#  - マウントしたファイル(ホスト所有=501)をそのまま読み書きできる
+# 非rootユーザー。uid をホストに合わせる理由:
+#  - マウントしたファイル(ホスト所有)をそのまま読み書きできる
 #  - --dangerously-skip-permissions が使える(root だと安全のため拒否される)
-RUN useradd -m -u 501 -s /bin/bash dev
+# HOST_UID は box update が `--build-arg HOST_UID=$(id -u)` で渡す(未指定なら macOS 既定の 501)。
+# macOS のユーザー uid は 501 以降で、node イメージの node(uid 1000)等とは衝突しない前提。
+ARG HOST_UID=501
+RUN useradd -m -u ${HOST_UID} -s /bin/bash dev
 
 # 箱内 git の dubious ownership 回避。mount された /work は所有者判定で git に弾かれるため、
 # system 設定で全ディレクトリを信頼する(ro マウントされる user の ~/.gitconfig には潰されない)。
 # これが無いと claude / hikizan hooks が箱内で叩く git が全部止まる。
 RUN git config --system --add safe.directory '*'
 
-# GitHub の host key を焼き込む。箱は --rm で毎回 known_hosts が空になるため、素の git push が
-# "Host key verification failed" で止まる。build 時に取得し system known_hosts に固定しておく。
-RUN ssh-keyscan github.com >> /etc/ssh/ssh_known_hosts 2>/dev/null
+# 箱内 git push は ssh 鍵ではなく gh トークンの HTTPS で通す(box 側が insteadOf で書き換える)ため、
+# ssh の host key 焼き込みは不要。箱に渡す鍵の到達範囲を「GitHub の push 用途だけ」に絞る狙い。
 
 USER dev
 # 初回設定ファイルが無いという警告を抑止(中身は実行時に claude が補完)

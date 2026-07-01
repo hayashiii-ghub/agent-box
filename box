@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# box — Apple Container でエージェント(Claude Code)を隔離して放牧する
+# box — Apple Container でエージェント(Claude Code / Codex)を隔離して放牧する
 #
 # 使い方:
 #   box                              → カレントのプロジェクトで claude を対話起動
 #   box <プロジェクトのパス>           → 指定したプロジェクトで claude を対話起動
 #   box <プロジェクトのパス> bash      → 箱の中の shell に入る(コマンド指定時はパス必須。例: box . bash)
+#   box <プロジェクトのパス> codex     → 箱の中で codex を起動
 #   box <プロジェクトのパス> <コマンド> → 箱の中で任意コマンドを実行
 #   box update                       → イメージを最新化(claude/codex を再ビルド。手動更新)
 #
@@ -15,17 +16,34 @@
 #   - ~/.gitconfig を読み取り専用でマウント(commit 用の identity)
 #   - hikizan(自前の skill+hooks)をホスト実体から直読み → 更新は host で git pull するだけ
 #   - hikizan の skills を codex にも渡す(/home/dev/.codex/skills に ro マウント。codex 側は skill のみ=hooks/floors は付かない)
-#   - --ssh でSSHエージェントを転送(git push 用)
-#   - gh トークン(~/work/.sandbox-gh-token があれば)を GH_TOKEN で渡す(PR作成・gh API 用)
+#   - 箱内 git push は gh トークン(~/work/.sandbox-gh-token)を使った HTTPS で通す(ssh 鍵は箱に渡さない)
+#   - gh トークンは GH_TOKEN でも渡す(PR作成・gh API 用)
+#
+# セキュリティ上の割り切りは README「セキュリティ / 隔離の実力」を参照。
 set -euo pipefail
 
-BOX_DIR="$HOME/work/projects/agent-box"   # Dockerfile の場所(再ビルドのコンテキスト)
+# --- このスクリプト自身の場所から repo ルートを求める ---------------------------
+# box は Homebrew の symlink(/opt/homebrew/bin/box)から起動されるため、symlink を
+# 解決してから dirname を取る。box update の再ビルドコンテキストがこの値に依存する。
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do
+  _link="$(readlink "$_src")"
+  case "$_link" in
+    /*) _src="$_link" ;;                     # 絶対 symlink
+    *)  _src="$(dirname "$_src")/$_link" ;;  # 相対 symlink
+  esac
+done
+BOX_DIR="$(cd "$(dirname "$_src")" && pwd)"
 
-# box update → イメージを最新化(claude/codex を最新に焼き直す)。
+IMAGE=agent-sandbox   # 焼き込みイメージのタグ(名前は1箇所に集約)
+STALE_DAYS=14         # これより古いイメージなら起動時にヒントを出す(自動更新はしない)
+
+# box update → イメージを最新化(claude/codex/gh を最新に焼き直す)。
 # 自動更新はあえてしない(再現性・起動速度・オフライン性のため)。更新したい時だけ手動で。
 if [ "${1:-}" = "update" ]; then
   echo "[box] イメージ再ビルド中(claude/codex を最新化、数分かかります)…" >&2
-  exec container build --no-cache -t agent-sandbox "$BOX_DIR"
+  # コンテナ内ユーザーの uid をホストの実 uid に合わせて焼く(macOS の 501 以外でもマウントを読み書き可)。
+  exec container build --no-cache --build-arg "HOST_UID=$(id -u)" -t "$IMAGE" "$BOX_DIR"
 fi
 
 PROJECT="${1:-$PWD}"
@@ -36,10 +54,18 @@ fi
 PROJECT="$(cd "$PROJECT" && pwd)"   # 絶対パス化
 shift || true
 
-CLAUDE_CFG="$HOME/work/.sandbox-claude"
-CODEX_CFG="$HOME/work/.sandbox-codex"   # codex 認証(auth.json)の curated コピー。host の重い config.toml は持ち込まない
-HIKIZAN="$HOME/work/projects/hikizan"   # 自前の skill+hooks。更新は host で git pull するだけ(再ビルド不要)
-GH_TOKEN_FILE="$HOME/work/.sandbox-gh-token"   # 箱用 gh トークン(repo 外・chmod600)。PR作成/gh API 用
+# 設定パスは env で上書き可(未指定なら ~/work レイアウトが既定)。公開利用者が自分の配置に合わせられる。
+CLAUDE_CFG="${AGENT_BOX_CLAUDE_CFG:-$HOME/work/.sandbox-claude}"    # Claude 認証(host ~/.claude のコピー)。必須
+CODEX_CFG="${AGENT_BOX_CODEX_CFG:-$HOME/work/.sandbox-codex}"       # codex 認証(auth.json)の curated コピー。任意
+HIKIZAN="${AGENT_BOX_HIKIZAN:-$HOME/work/projects/hikizan}"         # 自前の skill+hooks。更新は host で git pull だけ(再ビルド不要)。任意
+GH_TOKEN_FILE="${AGENT_BOX_GH_TOKEN:-$HOME/work/.sandbox-gh-token}" # 箱用 gh トークン(repo 外・chmod600)。push / PR作成 / gh API 用。任意
+
+# Claude 認証は必須。無ければ「未認証 claude が黙って起動」する曖昧な失敗にせず、明確に落とす。
+[ -d "$CLAUDE_CFG" ] || {
+  echo "error: Claude 認証が未設定です: $CLAUDE_CFG" >&2
+  echo "       README「セットアップ」を参照(host ~/.claude を curated コピー)。" >&2
+  exit 1
+}
 
 MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
 [ -f "$HOME/.gitconfig" ] && MOUNTS+=(-v "$HOME/.gitconfig:/home/dev/.gitconfig:ro")
@@ -48,12 +74,28 @@ MOUNTS=(-v "$PROJECT:/work" -v "$CLAUDE_CFG:/home/dev/.claude")
 # hikizan の skills を codex にも渡す(codex は ~/.codex/skills を読む=箱では /home/dev/.codex/skills)。
 # 既存の .codex マウントの中へ入れ子で ro 追加(auth.json と共存。codex 側は skill のみ・hooks は付かない)。
 [ -d "$CODEX_CFG" ] && [ -d "$HIKIZAN/skills" ] && MOUNTS+=(-v "$HIKIZAN/skills:/home/dev/.codex/skills:ro")
-# gh トークンがあれば GH_TOKEN として注入(git push の SSH とは別系統。-e なので mount でなく環境変数)
-[ -f "$GH_TOKEN_FILE" ] && MOUNTS+=(-e "GH_TOKEN=$(cat "$GH_TOKEN_FILE")")
+
+# gh トークンがあれば注入。push はここから供給する HTTPS 認証で通す(ssh 鍵は箱に渡さない=箱が触れる鍵を
+# 「host の ssh 鍵ぜんぶ」から「GitHub 用の最小 PAT だけ」に縮小する)。
+#   - GH_TOKEN     : PR作成 / gh API 用
+#   - GIT_CONFIG_* : git@github.com: / https://github.com/ を token 埋め込み HTTPS に書き換え(insteadOf)。
+#                    ro マウントの ~/.gitconfig を汚さないよう env で注入(ファイル書き込み不要)。
+#   ※token が launch 時に host の ps へ一瞬見える点は単一ユーザ Mac として許容(GH_TOKEN と同じ扱い)。
+if [ -f "$GH_TOKEN_FILE" ]; then
+  _ght="$(cat "$GH_TOKEN_FILE")"
+  _tokurl="https://x-access-token:${_ght}@github.com/"
+  MOUNTS+=(
+    -e "GH_TOKEN=$_ght"
+    -e "GIT_CONFIG_COUNT=2"
+    -e "GIT_CONFIG_KEY_0=url.${_tokurl}.insteadOf" -e "GIT_CONFIG_VALUE_0=git@github.com:"
+    -e "GIT_CONFIG_KEY_1=url.${_tokurl}.insteadOf" -e "GIT_CONFIG_VALUE_1=https://github.com/"
+  )
+else
+  echo "[box] gh トークン未設定($GH_TOKEN_FILE): 箱内 git push / gh は無効です(README の gh 設定を参照)。" >&2
+fi
 
 # イメージが古ければ軽く知らせるだけ(自動更新はしない。取得/解析失敗時は黙ってスキップ)
-STALE_DAYS=14
-_created=$(container image inspect agent-sandbox 2>/dev/null | grep -m1 '"creationDate"' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)
+_created=$(container image inspect "$IMAGE" 2>/dev/null | grep -m1 '"creationDate"' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)
 if [ -n "${_created:-}" ]; then
   _c=$(date -j -f "%Y-%m-%d" "$_created" +%s 2>/dev/null || echo 0)
   if [ "$_c" -gt 0 ]; then
@@ -64,13 +106,14 @@ if [ -n "${_created:-}" ]; then
   fi
 fi
 
+# 共通の起動コマンド(resource limit 等を足すならこの1箇所に)。
+RUN=(container run --rm -it "${MOUNTS[@]}" -w /work "$IMAGE")
+
 if [ "$#" -gt 0 ]; then
-  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox "$@"
+  exec "${RUN[@]}" "$@"
 elif [ -d "$HIKIZAN" ]; then
   # hikizan を plugin として直読み(hooks=floors も同時に入る)
-  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox \
-    claude --dangerously-skip-permissions --plugin-dir /opt/hikizan
+  exec "${RUN[@]}" claude --dangerously-skip-permissions --plugin-dir /opt/hikizan
 else
-  exec container run --rm -it "${MOUNTS[@]}" -w /work --ssh agent-sandbox \
-    claude --dangerously-skip-permissions
+  exec "${RUN[@]}" claude --dangerously-skip-permissions
 fi
