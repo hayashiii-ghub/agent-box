@@ -47,6 +47,19 @@ RUN npm install -g @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-arm
  && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
  && npm cache clean --force
 
+# sitesnap(Playwright + Chromium のスクショ / 視覚検証 CLI)を build-arg で opt-in 導入する。
+# web/UI 作業で「撮る→はみ出し/console/a11y を判定→直す」の視覚ループを箱内で閉じるための道具。
+# Chromium + 依存ライブラリ一式でイメージが数百MB太るので、既定は入れない(最小・汎用のため)。
+# 焼くとき: AGENT_BOX_WITH_SITESNAP=1 box update(自分の箱を常時 web 対応にするなら profile に export)。
+# ブラウザは共有パス /ms-playwright に置き、非root の dev から読めるようにする(PLAYWRIGHT_BROWSERS_PATH)。
+# 導入は root のうちに実行する(--with-deps が apt で OS ライブラリを入れるため)。
+ARG WITH_SITESNAP=""
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN [ -z "$WITH_SITESNAP" ] || ( npm install -g @hayashiii/sitesnap \
+ && ( cd "$(npm root -g)/@hayashiii/sitesnap" && npx --yes playwright install --with-deps chromium ) \
+ && chmod -R go+rX /ms-playwright \
+ && npm cache clean --force )
+
 # 箱の中では自動アップデートしない(焼き込み式・再現性のため。書込不可で失敗する警告も消える)
 ENV DISABLE_AUTOUPDATER=1
 
@@ -77,6 +90,8 @@ RUN echo "[smoke] baked versions:" \
  && claude --version && codex --version && gh --version \
  && claude --help >/dev/null \
  && test -d /usr/local/lib/node_modules/@anthropic-ai/claude-code-linux-arm64 \
+ && if [ -n "$WITH_SITESNAP" ]; then echo "[smoke] sitesnap:" && sitesnap --version \
+      && NODE_PATH="$(npm root -g)/@hayashiii/sitesnap/node_modules:$(npm root -g)" node -e "require('playwright').chromium.launch().then(b=>b.close()).then(()=>console.log('[smoke] chromium ok')).catch(e=>{console.error(e);process.exit(1)})" ; fi \
  && rm -rf /home/dev/.cache /home/dev/.npm
 
 WORKDIR /work
