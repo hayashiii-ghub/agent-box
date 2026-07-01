@@ -44,9 +44,11 @@ if [ "${1:-}" = "update" ]; then
   echo "[box] イメージ再ビルド中(claude/codex を最新化、数分かかります)…" >&2
   # uid はホストの実 uid に合わせて焼く(macOS の 501 以外でもマウントを読み書き可)。
   # AGENT_BOX_APT_EXTRA があれば追加 apt パッケージとして焼く(例: AGENT_BOX_APT_EXTRA="ripgrep vim")。
+  # AGENT_BOX_WITH_SITESNAP=1 なら sitesnap(Playwright+Chromium の視覚検証)を焼く(既定 OFF。web 対応版)。
   exec container build --no-cache \
     --build-arg "HOST_UID=$(id -u)" \
     --build-arg "APT_EXTRA=${AGENT_BOX_APT_EXTRA:-}" \
+    --build-arg "WITH_SITESNAP=${AGENT_BOX_WITH_SITESNAP:-}" \
     -t "$IMAGE" "$BOX_DIR"
 fi
 

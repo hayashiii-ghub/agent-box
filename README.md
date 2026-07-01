@@ -72,6 +72,18 @@ AGENT_BOX_APT_EXTRA="ripgrep vim tree" box update   # 追加の apt パッケー
 
 既定で `jq`(JSON整形)/ `less`(ページャ)は同梱済み。`gcc` / `make` / `python3` / `git` / `curl` 等はベースの `node` イメージに元から入っている。
 
+### web/UI の視覚検証(sitesnap)を入れる(任意)
+
+web/UI を触るなら [sitesnap](https://github.com/hayashiii-ghub/sitesnap)(Playwright + Chromium のスクショ / 視覚検証 CLI)を焼き込める。入れると「撮る → はみ出し / console エラー / a11y を判定 → 直す」の**視覚ループが箱の中で閉じる**(hikizan の skill は sitesnap があれば自動で視覚検証に使う)。Chromium 一式でイメージが数百MB太るので**既定は OFF**:
+
+```bash
+AGENT_BOX_WITH_SITESNAP=1 box update   # sitesnap + Chromium を焼き込む(web 対応版)
+```
+
+いつも web をやるなら、shell の profile に `export AGENT_BOX_WITH_SITESNAP=1` を書けば `box update` のたびに**常時 ON**(自分の箱だけ web 対応版・公開の既定は素のまま)。
+
+> 箱の中で dev server を立てて撮るときは URL が localhost になる。sitesnap は安全のため private IP を既定でブロックするので `--allow-private` を付ける(dev server も sitesnap も同じ箱の中なので localhost で届く)。
+
 ## 箱の中
 
 - プロジェクトを `/work` にマウント(編集はホストに反映)
