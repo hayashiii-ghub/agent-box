@@ -129,6 +129,14 @@ AGENT_BOX_WITH_SITESNAP=1 box update   # sitesnap + Chromium を焼き込む(web
 
 **一言まとめ**: 「**ホストは守れる。箱に渡した認証情報と、いじらせたリポジトリは守れない**」。個人利用・最小権限 PAT・使い捨て前提なら受容可能なトレードオフ。さらに強く絞るなら、箱の外向き通信を許可リスト(github / anthropic / openai / npm のみ)化するのが次の一手(現状は未実装 = 受容)。
 
+## クラウドで動かす(発展)
+
+box の中身は「arm64 の軽量 VM でエージェントを隔離して走らせる」だけなので、同じ発想はそのままクラウドに乗る。**クラウドエージェント的に(常時動く / どこからでも叩ける形で)使いたいなら、こういう所に載せる**という話。
+
+- [AWS Lambda の MicroVMs](https://aws.amazon.com/blogs/aws/run-isolated-sandboxes-with-full-lifecycle-control-aws-lambda-introduces-microvms/): Firecracker の VM 単位でセッションを隔離し、状態(メモリ + ディスク)を保持したまま最大 8 時間・suspend/resume で動かせる。arm64・東京リージョン対応なので、この箱と同じ「隔離した VM でエージェントを放牧する」構図をローカルからクラウドへ移せる。
+
+> **隔離の実力は載せる場所を変えても同じ。** VM 隔離が守るのは「ホスト / 他テナント」で、上の「セキュリティ / 隔離の実力」がそのまま当てはまる。箱に渡した認証や、取り消せない操作(送金・トレード・投稿など)は隔離では守れない。お金やアカウントを自動で動かすなら、隔離とは別に **LLM と本番 API の間に上限をハードコードした実行層(関所)** を置き、鍵はそこに絞って渡す。
+
 ## 要件
 
 - Apple Silicon + macOS 26+([Apple Container](https://github.com/apple/container))
