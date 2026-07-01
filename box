@@ -94,6 +94,14 @@ else
   echo "[box] gh トークン未設定($GH_TOKEN_FILE): 箱内 git push / gh は無効です(README の gh 設定を参照)。" >&2
 fi
 
+# イメージ未ビルドなら、container の低レベルエラーで面食らわせず更新方法を示して止める
+# (別Mac の clone 直後、box update を踏む前にここへ来やすい。box update は上で exec 済みなので影響しない)
+container image inspect "$IMAGE" >/dev/null 2>&1 || {
+  echo "error: イメージ '$IMAGE' が未ビルドです。まず: box update" >&2
+  echo "       (初回ビルドは数分。README「セットアップ」参照)" >&2
+  exit 1
+}
+
 # イメージが古ければ軽く知らせるだけ(自動更新はしない。取得/解析失敗時は黙ってスキップ)
 _created=$(container image inspect "$IMAGE" 2>/dev/null | grep -m1 '"creationDate"' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)
 if [ -n "${_created:-}" ]; then
